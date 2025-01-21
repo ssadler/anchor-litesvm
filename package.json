@@ -1,9 +1,11 @@
 {
 	"name": "anchor-litesvm",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
-	"files": ["dist/"],
+	"files": [
+		"dist/"
+	],
 	"license": "MIT",
 	"devDependencies": {
 		"@coral-xyz/anchor": "^0.30.0",
@@ -37,7 +39,7 @@
 	"peerDependencies": {
 		"@coral-xyz/anchor": "^0.30.0",
 		"@solana/web3.js": ">1.92.0",
-		"litesvm": "0.0.2"
+		"litesvm": "0.1.0"
 	},
 	"dependencies": {
 		"@iarna/toml": "^2.2.5"
