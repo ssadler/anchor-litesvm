@@ -1,21 +1,4 @@
-import {
-	AccountInfo,
-	Commitment,
-	ConfirmOptions,
-	Connection,
-	GetAccountInfoConfig,
-	PublicKey,
-	RpcResponseAndContext,
-	SendOptions,
-	Signer,
-	Transaction,
-	TransactionSignature,
-	VersionedTransaction,
-	SendTransactionError,
-	Keypair,
-	LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
-import { Provider, Wallet } from "@coral-xyz/anchor";
+import { Provider, Wallet, web3 } from "@coral-xyz/anchor";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import bs58 from "bs58";
 import { SuccessfulTxSimulationResponse } from "@coral-xyz/anchor/dist/cjs/utils/rpc";
@@ -24,17 +7,17 @@ import { readFileSync } from "fs";
 import * as TOML from "@iarna/toml";
 
 interface ConnectionInterface {
-	getAccountInfo: Connection["getAccountInfo"];
-	getAccountInfoAndContext: Connection["getAccountInfoAndContext"];
-	getMinimumBalanceForRentExemption: Connection["getMinimumBalanceForRentExemption"];
+	getAccountInfo: web3.Connection["getAccountInfo"];
+	getAccountInfoAndContext: web3.Connection["getAccountInfoAndContext"];
+	getMinimumBalanceForRentExemption: web3.Connection["getMinimumBalanceForRentExemption"];
 }
 
 class LiteSVMConnectionProxy implements ConnectionInterface {
 	constructor(private client: LiteSVM) {}
 	async getAccountInfoAndContext(
-		publicKey: PublicKey,
-		_commitmentOrConfig?: Commitment | GetAccountInfoConfig | undefined,
-	): Promise<RpcResponseAndContext<AccountInfo<Buffer>>> {
+		publicKey: web3.PublicKey,
+		_commitmentOrConfig?: web3.Commitment | web3.GetAccountInfoConfig | undefined,
+	): Promise<web3.RpcResponseAndContext<web3.AccountInfo<Buffer>>> {
 		const accountInfoBytes = this.client.getAccount(publicKey);
 		if (!accountInfoBytes)
 			throw new Error(`Could not find ${publicKey.toBase58()}`);
@@ -47,9 +30,9 @@ class LiteSVMConnectionProxy implements ConnectionInterface {
 		};
 	}
 	async getAccountInfo(
-		publicKey: PublicKey,
-		_commitmentOrConfig?: Commitment | GetAccountInfoConfig | undefined,
-	): Promise<AccountInfo<Buffer>> {
+		publicKey: web3.PublicKey,
+		_commitmentOrConfig?: web3.Commitment | web3.GetAccountInfoConfig | undefined,
+	): Promise<web3.AccountInfo<Buffer>> {
 		const accountInfoBytes = this.client.getAccount(publicKey);
 		if (!accountInfoBytes)
 			throw new Error(`Could not find ${publicKey.toBase58()}`);
@@ -60,19 +43,20 @@ class LiteSVMConnectionProxy implements ConnectionInterface {
 	}
 	async getMinimumBalanceForRentExemption(
 		dataLength: number,
-		_commitment?: Commitment,
+		_commitment?: web3.Commitment,
 	): Promise<number> {
 		const rent = this.client.getRent();
 		return Number(rent.minimumBalance(BigInt(dataLength)));
 	}
 }
 
-function sendWithErr(tx: Transaction | VersionedTransaction, client: LiteSVM) {
+function sendWithErr(tx: web3.Transaction | web3.VersionedTransaction, client: LiteSVM) {
 	const res = client.sendTransaction(tx);
 	if (res instanceof FailedTransactionMetadata) {
-		const sigRaw = tx instanceof Transaction ? tx.signature : tx.signatures[0];
+		const sigRaw = tx instanceof web3.Transaction ? tx.signature : tx.signatures[0];
+
 		const signature = bs58.encode(sigRaw);
-		throw new SendTransactionError({
+		throw new web3.SendTransactionError({
 			action: "send",
 			signature,
 			transactionMessage: res.err().toString(),
@@ -83,27 +67,27 @@ function sendWithErr(tx: Transaction | VersionedTransaction, client: LiteSVM) {
 
 export class LiteSVMProvider implements Provider {
 	wallet: Wallet;
-	connection: Connection;
-	publicKey: PublicKey;
+	connection: web3.Connection;
+	publicKey: web3.PublicKey;
 
 	constructor(public client: LiteSVM, wallet?: Wallet) {
 		if (wallet == null) {
-			const payer = new Keypair();
-			client.airdrop(payer.publicKey, BigInt(LAMPORTS_PER_SOL));
+			const payer = new web3.Keypair();
+			client.airdrop(payer.publicKey, BigInt(web3.LAMPORTS_PER_SOL));
 			this.wallet = new Wallet(payer);
 		} else {
 			this.wallet = wallet;
 		}
 		this.connection = new LiteSVMConnectionProxy(
 			client,
-		) as unknown as Connection; // uh
+		) as unknown as web3.Connection; // uh
 		this.publicKey = this.wallet.publicKey;
 	}
 
 	async send?(
-		tx: Transaction | VersionedTransaction,
-		signers?: Signer[] | undefined,
-		_opts?: SendOptions | undefined,
+		tx: web3.Transaction | web3.VersionedTransaction,
+		signers?: web3.Signer[] | undefined,
+		_opts?: web3.SendOptions | undefined,
 	): Promise<string> {
 		if ("version" in tx) {
 			signers?.forEach((signer) => tx.sign([signer]));
@@ -126,9 +110,9 @@ export class LiteSVMProvider implements Provider {
 		return signature;
 	}
 	async sendAndConfirm?(
-		tx: Transaction | VersionedTransaction,
-		signers?: Signer[] | undefined,
-		_opts?: ConfirmOptions | undefined,
+		tx: web3.Transaction | web3.VersionedTransaction,
+		signers?: web3.Signer[] | undefined,
+		_opts?: web3.ConfirmOptions | undefined,
 	): Promise<string> {
 		if ("version" in tx) {
 			signers?.forEach((signer) => tx.sign([signer]));
@@ -150,21 +134,21 @@ export class LiteSVMProvider implements Provider {
 		sendWithErr(tx, this.client);
 		return signature;
 	}
-	async sendAll<T extends Transaction | VersionedTransaction>(
-		txWithSigners: { tx: T; signers?: Signer[] | undefined }[],
-		_opts?: ConfirmOptions | undefined,
+	async sendAll<T extends web3.Transaction | web3.VersionedTransaction>(
+		txWithSigners: { tx: T; signers?: web3.Signer[] | undefined }[],
+		_opts?: web3.ConfirmOptions | undefined,
 	): Promise<string[]> {
 		const recentBlockhash = this.client.latestBlockhash();
 
 		const txs = txWithSigners.map((r) => {
 			if ("version" in r.tx) {
-				const tx: VersionedTransaction = r.tx;
+				const tx: web3.VersionedTransaction = r.tx;
 				if (r.signers) {
 					tx.sign(r.signers);
 				}
 				return tx;
 			} else {
-				const tx: Transaction = r.tx;
+				const tx: web3.Transaction = r.tx;
 				const signers = r.signers ?? [];
 
 				tx.feePayer = tx.feePayer ?? this.wallet.publicKey;
@@ -178,7 +162,7 @@ export class LiteSVMProvider implements Provider {
 		});
 
 		const signedTxs = await this.wallet.signAllTransactions(txs);
-		const sigs: TransactionSignature[] = [];
+		const sigs: web3.TransactionSignature[] = [];
 
 		for (let k = 0; k < txs.length; k += 1) {
 			const tx = signedTxs[k];
@@ -192,10 +176,10 @@ export class LiteSVMProvider implements Provider {
 		return Promise.resolve(sigs);
 	}
 	async simulate(
-		tx: Transaction | VersionedTransaction,
-		signers?: Signer[] | undefined,
-		_commitment?: Commitment | undefined,
-		includeAccounts?: boolean | PublicKey[] | undefined,
+		tx: web3.Transaction | web3.VersionedTransaction,
+		signers?: web3.Signer[] | undefined,
+		_commitment?: web3.Commitment | undefined,
+		includeAccounts?: boolean | web3.PublicKey[] | undefined,
 	): Promise<SuccessfulTxSimulationResponse> {
 		if (includeAccounts !== undefined) {
 			throw new Error("includeAccounts cannot be used with LiteSVMProvider");
@@ -210,9 +194,9 @@ export class LiteSVMProvider implements Provider {
 		}
 		const rawResult = this.client.simulateTransaction(tx);
 		if (rawResult instanceof FailedTransactionMetadata) {
-			const sigRaw = tx instanceof Transaction ? tx.signature : tx.signatures[0];
+			const sigRaw = tx instanceof web3.Transaction ? tx.signature : tx.signatures[0];
 			const signature = bs58.encode(sigRaw);
-			throw new SendTransactionError({
+			throw new web3.SendTransactionError({
 				action: "simulate",
 				signature,
 				transactionMessage: rawResult.err().toString(),
@@ -246,7 +230,7 @@ export function fromWorkspace(workspacePath: string): LiteSVM {
 	Object.keys(programs).forEach((key) => {
 		const id = programs[key] as string;
 		const programPath = path.join(sbfOutDir, `${key.replace('-', '_')}.so`);
-		svm.addProgramFromFile(new PublicKey(id), programPath);
+		svm.addProgramFromFile(new web3.PublicKey(id), programPath);
 	});
 	return svm;
 }
